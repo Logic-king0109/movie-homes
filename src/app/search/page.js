@@ -8,6 +8,7 @@ import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
 import MovieCard from '@/components/movie/MovieCard'
 
+export const dynamic = 'force-dynamic'
 export const viewport = { width: 'device-width', initialScale: 1 }
 
 function SearchContent() {
