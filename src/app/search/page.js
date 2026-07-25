@@ -1,122 +1,103 @@
 // src/app/search/page.js
-'use client'
-
-import { useState, useEffect, useCallback, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
-import { searchNaijaPrayMovies } from '@/lib/api'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
-import MovieCard from '@/components/movie/MovieCard'
+import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 export const viewport = { width: 'device-width', initialScale: 1 }
 
-function SearchContent() {
-  const searchParams = useSearchParams()
-  const initialQuery = searchParams.get('q') || ''
+export default async function SearchPage({ searchParams }) {
+  const query = searchParams?.q || ''
+  let results = []
   
-  const [query, setQuery] = useState(initialQuery)
-  const [results, setResults] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [hasMore, setHasMore] = useState(true)
-  const [page, setPage] = useState(1)
-  const [error, setError] = useState(null)
-
-  const performSearch = useCallback(async (searchQuery, pageNum = 1, append = false) => {
-    if (!searchQuery.trim()) return
+  if (query) {
     try {
-      setLoading(true)
-      setError(null)
-      const data = await searchNaijaPrayMovies(searchQuery, pageNum)
-      const items = (data.items || []).filter(item => item != null)
-      if (append) {
-        setResults(prev => [...prev, ...items])
-      } else {
-        setResults(items)
+      const url = `https://www.naijaprey.tv/wp-json/wp/v2/posts?search=${encodeURIComponent(query)}&per_page=20&_embed`
+      const response = await fetch(url, { next: { revalidate: 60 } })
+      if (response.ok) {
+        const posts = await response.json()
+        results = posts.map(post => {
+          const title = post.title.rendered
+          const image = post._embedded?.['wp:featuredmedia']?.[0]?.source_url || null
+          const year = post.date?.split('-')[0] || ''
+          const cleanName = title.replace(/\s*\(?\d{4}\)?\s*/g, '').replace(/\s*Season\s*\d+.*$/i, '').trim()
+          
+          return {
+            id: post.slug,
+            title: cleanName,
+            fullTitle: title,
+            poster: image,
+            year,
+            isSeries: /season/i.test(title),
+          }
+        })
       }
-      setHasMore(data.hasMore)
-      setPage(pageNum)
-    } catch (err) {
-      setError('Failed to search. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (initialQuery) {
-      setQuery(initialQuery)
-      performSearch(initialQuery, 1, false)
-    }
-  }, [initialQuery, performSearch])
-
-  useEffect(() => {
-    const handleScroll = () => {
-      if (loading || !hasMore) return
-      const scrollPos = window.innerHeight + window.scrollY
-      const threshold = document.documentElement.scrollHeight - 500
-      if (scrollPos >= threshold) performSearch(query, page + 1, true)
-    }
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [loading, hasMore, page, query, performSearch])
-
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    if (query.trim()) {
-      window.history.pushState({}, '', `/search?q=${encodeURIComponent(query.trim())}`)
-      performSearch(query, 1, false)
+    } catch (error) {
+      console.error('Search failed:', error)
     }
   }
-
-  const safeResults = results.filter(item => item != null)
 
   return (
     <>
       <Navbar />
       <div className="container-custom py-8">
-        <div className="mb-8">
-          <form onSubmit={handleSubmit} className="max-w-2xl mx-auto">
-            <div className="relative">
-              <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search movies, TV shows, anime by title..."
-                className="w-full bg-[var(--bg-card)] border border-[var(--border-light)] rounded-xl px-6 py-4 text-[var(--text-primary)] text-lg focus:outline-none focus:border-[#a78bfa] transition-all" autoFocus />
-              <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 bg-gradient-to-r from-[#7c3aed] to-[#a855f7] text-white px-6 py-2 rounded-lg font-medium hover:from-[#6d28d9] hover:to-[#9333ea] transition-all">Search</button>
-            </div>
-          </form>
-        </div>
+        {/* Search Form */}
+        <form action="/search" method="GET" className="max-w-2xl mx-auto mb-8">
+          <div className="relative">
+            <input 
+              type="text" 
+              name="q" 
+              defaultValue={query}
+              placeholder="Search movies, TV shows, anime by title..."
+              className="w-full bg-[var(--bg-card)] border border-[var(--border-light)] rounded-xl px-6 py-4 text-[var(--text-primary)] text-lg focus:outline-none focus:border-[#a78bfa] transition-all" 
+              autoFocus 
+            />
+            <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 bg-gradient-to-r from-[#7c3aed] to-[#a855f7] text-white px-6 py-2 rounded-lg font-medium">
+              Search
+            </button>
+          </div>
+        </form>
 
-        {loading && safeResults.length === 0 ? (
-          <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-purple-500"></div></div>
-        ) : error ? (
-          <div className="text-center py-12 text-red-400">{error}</div>
-        ) : safeResults.length === 0 && query ? (
-          <div className="text-center py-12"><div className="text-6xl mb-4">🔍</div><h2 className="text-2xl font-bold text-white mb-2">No results found</h2><p className="text-gray-400">Try searching for something else</p></div>
-        ) : safeResults.length === 0 ? (
-          <div className="text-center py-12"><div className="text-6xl mb-4">🎬</div><h2 className="text-2xl font-bold text-white mb-2">Search by title</h2><p className="text-gray-400">Type a movie or TV show title above</p></div>
+        {/* Results */}
+        {!query ? (
+          <div className="text-center py-16">
+            <div className="text-6xl mb-4">🎬</div>
+            <h2 className="text-2xl font-bold text-white mb-2">Search by title</h2>
+            <p className="text-gray-400">Type a movie or TV show title above</p>
+          </div>
+        ) : results.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="text-6xl mb-4">🔍</div>
+            <h2 className="text-2xl font-bold text-white mb-2">No results found</h2>
+            <p className="text-gray-400">Try searching for something else</p>
+          </div>
         ) : (
           <>
-            <div className="mb-6"><h2 className="text-xl font-bold text-white">Results for "{query}"</h2></div>
+            <h2 className="text-xl font-bold text-white mb-6">Results for "{query}"</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
-              {safeResults.map((item, index) => {
-                if (!item || !item.id) return null
-                return <MovieCard key={item.id || index} data={item} index={index} />
-              })}
+              {results.map((item, i) => (
+                <Link key={item.id || i} href={`/detail/${item.id}`} className="block bg-[var(--bg-card)] rounded-lg overflow-hidden border border-[var(--border-light)] hover:border-purple-500 transition-all group">
+                  <div className="aspect-[2/3] bg-gray-800 flex items-center justify-center">
+                    {item.poster ? (
+                      <img src={item.poster} alt={item.title} className="w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      <span className="text-4xl">🎬</span>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    <h3 className="text-sm font-medium text-white truncate">{item.title}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-gray-400">{item.year}</span>
+                      <span className="text-xs text-purple-400">{item.isSeries ? 'Series' : 'Movie'}</span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
             </div>
-            {loading && <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-500"></div></div>}
-            {!hasMore && safeResults.length > 0 && <div className="text-center py-8 text-gray-400 text-sm">No more results</div>}
           </>
         )}
       </div>
       <Footer />
     </>
-  )
-}
-
-export default function SearchPage() {
-  return (
-    <Suspense fallback={<div className="flex justify-center py-16"><div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-purple-500"></div></div>}>
-      <SearchContent />
-    </Suspense>
   )
 }
